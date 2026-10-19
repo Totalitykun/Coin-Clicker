@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coin Clicker</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #1e1e2e; color: #f0f0f0; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 20px; }
+  #coins { font-size: 2em; color: #f9e2af; margin: 10px 0; }
+  #stats { color: #a6adc8; text-align: center; margin-bottom: 10px; }
+  #coin { width: 150px; height: 150px; border-radius: 50%; border: 6px solid #b8860b; background: #f9c74f; font-size: 3em; cursor: pointer; }
+  #coin:active { transform: scale(0.95); }
+  #tabs { display: flex; gap: 8px; margin-top: 20px; }
+  .tabBtn { padding: 8px 18px; border: none; border-radius: 6px; background: #313244; color: #f0f0f0; cursor: pointer; }
+  .tabBtn.active { background: #cba6f7; color: #1e1e2e; font-weight: bold; }
+  .panel { display: none; margin-top: 15px; }
+  .panel.active { display: block; }
+  #shop { display: flex; flex-direction: column; gap: 8px; width: 380px; max-height: 60vh; overflow-y: auto; }
+  .upgrade { padding: 10px; border: none; border-radius: 8px; background: #313244; color: #f0f0f0; cursor: pointer; text-align: left; }
+  .upgrade:disabled { opacity: 0.4; cursor: not-allowed; }
+  .section-title { color: #cba6f7; font-weight: bold; margin-top: 8px; }
+  #resetBtn { margin-top: 25px; padding: 8px 14px; border: none; border-radius: 6px; background: #f38ba8; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Coin Clicker</h1>
+<div id="coins">0 coins</div>
+<div id="stats"></div>
+<button id="coin">🪙</button>
+
+<div id="tabs">
+  <button class="tabBtn active" data-tab="clickerTab">Clicker</button>
+  <button class="tabBtn" data-tab="upgradesTab">Upgrades</button>
+</div>
+
+<div id="clickerTab" class="panel active">
+  <p style="text-align:center; color:#a6adc8;">Tap the coin to earn coins.</p>
+</div>
+
+<div id="upgradesTab" class="panel">
+  <div id="shop"></div>
+</div>
+
+<button id="resetBtn">Reset Save</button>
+
+<script>
+const UPGRADES = [
+  { id: "c1", name: "Better Click", type: "click", amount: 1, baseCost: 10 },
+  { id: "c2", name: "Power Click", type: "click", amount: 5, baseCost: 250 },
+  { id: "c3", name: "Golden Finger", type: "click", amount: 25, baseCost: 5000 },
+  { id: "c4", name: "Mega Click", type: "click", amount: 100, baseCost: 100000 },
+  { id: "c5", name: "Diamond Tap", type: "click", amount: 500, baseCost: 1000000 },
+  { id: "a1", name: "Auto Clicker", type: "auto", amount: 1, baseCost: 50 },
+  { id: "a2", name: "Coin Mine", type: "auto", amount: 5, baseCost: 500 },
+  { id: "a3", name: "Coin Factory", type: "auto", amount: 25, baseCost: 3000 },
+  { id: "a4", name: "Bank Account", type: "auto", amount: 100, baseCost: 25000 },
+  { id: "a5", name: "Coin Refinery", type: "auto", amount: 500, baseCost: 200000 }
+];
+
+const SAVE_KEY = "coinClickerSave";
+const COST_GROWTH = 1.5;
+
+let state = { coins: 0, totalCoins: 0, owned: {} };
+
+const coinsEl = document.getElementById("coins");
+const statsEl = document.getElementById("stats");
+const shopEl = document.getElementById("shop");
+const coinBtn = document.getElementById("coin");
+const resetBtn = document.getElementById("resetBtn");
+
+// Tabs
+document.querySelectorAll(".tabBtn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tabBtn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  });
+});
+
+// Build shop
+const shopButtons = {};
+let lastType = null;
+UPGRADES.forEach(up => {
+  if (up.type !== lastType) {
+    const t = document.createElement("div");
+    t.className = "section-title";
+    t.textContent = up.type === "click" ? "Click Upgrades" : "Auto Upgrades";
+    shopEl.appendChild(t);
+    lastType = up.type;
+  }
+  const btn = document.createElement("button");
+  btn.className = "upgrade";
+  btn.addEventListener("click", () => buy(up.id));
+  shopEl.appendChild(btn);
+  shopButtons[up.id] = btn;
+});
+
+function getCount(id) { return state.owned[id] || 0; }
+function getCost(up) { return Math.floor(up.baseCost * Math.pow(COST_GROWTH, getCount(up.id))); }
+
+function getPerClick() {
+  let total = 1;
+  UPGRADES.forEach(up => { if (up.type === "click") total += up.amount * getCount(up.id); });
+  return total;
+}
+
+function getPerSecond() {
+  let total = 0;
+  UPGRADES.forEach(up => { if (up.type === "auto") total += up.amount * getCount(up.id); });
+  return total;
+}
+
+function fmt(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
+  return Math.floor(n).toString();
+}
+
+function buy(id) {
+  const up = UPGRADES.find(u => u.id === id);
+  const cost = getCost(up);
+  if (state.coins >= cost) {
+    state.coins -= cost;
+    state.owned[id] = getCount(id) + 1;
+    render();
+    save();
+  }
+}
+
+function render() {
+  coinsEl.textContent = fmt(state.coins) + " coins";
+  statsEl.textContent = `+${fmt(getPerClick())} per click | +${fmt(getPerSecond())} per second | Lifetime: ${fmt(state.totalCoins)}`;
+  UPGRADES.forEach(up => {
+    const cost = getCost(up);
+    const btn = shopButtons[up.id];
+    const bonus = up.type === "click" ? `+${fmt(up.amount)} per click` : `+${fmt(up.amount)} per second`;
+    btn.textContent = `${up.name} (${bonus}) - Owned: ${getCount(up.id)} - Cost: ${fmt(cost)}`;
+    btn.disabled = state.coins < cost;
+  });
+}
+
+coinBtn.addEventListener("click", () => {
+  const gain = getPerClick();
+  state.coins += gain;
+  state.totalCoins += gain;
+  render();
+});
+
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function load() {
+  try {
+    const data = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (data) state = { coins: 0, totalCoins: 0, owned: {}, ...data };
+  } catch (e) {}
+}
+
+resetBtn.addEventListener("click", () => {
+  if (confirm("Reset all progress?")) {
+    state = { coins: 0, totalCoins: 0, owned: {} };
+    save();
+    render();
+  }
+});
+
+// Auto income each second
+setInterval(() => {
+  const gain = getPerSecond();
+  if (gain > 0) {
+    state.coins += gain;
+    state.totalCoins += gain;
+  }
+  render();
+  save();
+}, 1000);
+
+load();
+render();
+</script>
+</body>
+</html>
